@@ -36,12 +36,14 @@ interface TableFormatSettings {
 	contentJoin: ContentJoin;
 	alignOnEdit: boolean;
 	livePreview: boolean;
+	centerMerged: boolean;
 }
 
 const DEFAULT_SETTINGS: TableFormatSettings = {
 	contentJoin: "space",
 	alignOnEdit: true,
 	livePreview: true,
+	centerMerged: true,
 };
 
 interface TableContext {
@@ -53,10 +55,13 @@ interface TableContext {
 
 export default class TableFormatPlugin extends Plugin {
 	settings: TableFormatSettings = DEFAULT_SETTINGS;
+	/** Documents of the main window and open popout windows. */
+	private docs = new Set<Document>([document]);
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		registerIcons();
+		this.updateBodyClass();
 
 		this.registerMarkdownPostProcessor((el) => {
 			el.querySelectorAll("table").forEach(applyMergedCells);
@@ -124,12 +129,23 @@ export default class TableFormatPlugin extends Plugin {
 		// event, so hook the contextmenu event itself in every window.
 		this.registerDomEvent(document, "contextmenu", this.onContextMenu, { capture: true });
 		this.registerEvent(
-			this.app.workspace.on("window-open", (win) =>
-				this.registerDomEvent(win.doc, "contextmenu", this.onContextMenu, { capture: true }),
-			),
+			this.app.workspace.on("window-open", (win) => {
+				this.docs.add(win.doc);
+				this.updateBodyClass();
+				this.registerDomEvent(win.doc, "contextmenu", this.onContextMenu, { capture: true });
+			}),
 		);
+		this.registerEvent(this.app.workspace.on("window-close", (win) => this.docs.delete(win.doc)));
 
 		this.addSettingTab(new TableFormatSettingTab(this.app, this));
+	}
+
+	onunload(): void {
+		this.docs.forEach((doc) => doc.body.removeClass("table-format-center"));
+	}
+
+	updateBodyClass(): void {
+		this.docs.forEach((doc) => doc.body.toggleClass("table-format-center", this.settings.centerMerged));
 	}
 
 	async loadSettings(): Promise<void> {
@@ -303,6 +319,17 @@ class TableFormatSettingTab extends PluginSettingTab {
 				t.setValue(this.plugin.settings.alignOnEdit).onChange(async (v) => {
 					this.plugin.settings.alignOnEdit = v;
 					await this.plugin.saveSettings();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("合并单元格内容居中")
+			.setDesc("关闭后，合并单元格沿用所在列的对齐方式。")
+			.addToggle((t) =>
+				t.setValue(this.plugin.settings.centerMerged).onChange(async (v) => {
+					this.plugin.settings.centerMerged = v;
+					await this.plugin.saveSettings();
+					this.plugin.updateBodyClass();
 				}),
 			);
 

@@ -58,3 +58,14 @@
 .markdown-source-view.mod-cm6 .cm-table-widget .table-editor .table-format-merged {
 	vertical-align: middle;
 }
+
+/* The table editor stretches the content wrapper to the cell height, which would pin it to the top */
+.markdown-source-view.mod-cm6 .cm-table-widget .table-editor .table-format-merged > .table-cell-wrapper {
+	height: auto;
+}
+
+/* "Center merged cells" setting; outranks the column alignment (align attribute) */
+body.table-format-center .markdown-rendered .table-format-merged,
+body.table-format-center .markdown-source-view.mod-cm6 .cm-table-widget .table-editor .table-format-merged {
+	text-align: center;
+}
