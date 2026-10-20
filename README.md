@@ -53,14 +53,22 @@
 
 ## 安装
 
-### 手动安装
+### 从 Release 下载
+
+1. 打开 [Releases](https://github.com/Thinker746/obsidian-table-format/releases)，下载最新版本的 `table-format-<版本号>.zip`。
+2. 解压到库目录下的 `.obsidian/plugins/`，得到 `.obsidian/plugins/table-format/`(里面有 `main.js`、`manifest.json`、`styles.css`)。
+3. 重启 Obsidian 或在「设置 → 第三方插件」中刷新，然后启用 **Table Format**。
+
+也可以用 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 插件，填入 `Thinker746/obsidian-table-format`，自动安装和更新。
+
+### 从源码构建
 
 ```bash
 npm install
 npm run build
 ```
 
-把 `main.js`、`manifest.json`、`styles.css` 复制到库目录下的 `.obsidian/plugins/table-format/`，然后在「设置 → 第三方插件」中启用 **Table Format**。
+把 `main.js`、`manifest.json`、`styles.css` 复制到 `.obsidian/plugins/table-format/`。
 
 ### 开发
 
@@ -68,3 +76,12 @@ npm run build
 npm run dev    # 监听源码变化并重新构建
 npm test       # 运行单元测试
 ```
+
+### 发布新版本
+
+```bash
+npm version patch   # 或 minor / major：同步更新 manifest.json、versions.json，并打上标签
+git push --follow-tags
+```
+
+推送标签后，GitHub Actions 会运行测试、构建，并创建 Release(附带 `main.js`、`manifest.json`、`styles.css` 和打包好的 zip)。

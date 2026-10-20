@@ -6,9 +6,14 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
-  "keywords": ["obsidian", "table", "merge cells"],
+  "keywords": [
+    "obsidian",
+    "table",
+    "merge cells"
+  ],
   "author": "Thinker746",
   "license": "MIT",
   "devDependencies": {
