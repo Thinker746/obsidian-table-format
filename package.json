@@ -1,0 +1,22 @@
+{
+  "name": "obsidian-table-format",
+  "version": "0.1.0",
+  "description": "Merge table cells (colspan / rowspan) in Obsidian Markdown tables.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "keywords": ["obsidian", "table", "merge cells"],
+  "author": "Thinker746",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "0.25.12",
+    "obsidian": "1.8.7",
+    "tslib": "2.8.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,46 @@
+/* Merged cells in reading view / PDF export */
+.markdown-rendered .table-format-merged {
+	vertical-align: middle;
+}
+
+/* Cell picker */
+.table-format-grid {
+	max-height: 60vh;
+	overflow: auto;
+	margin-bottom: var(--size-4-3);
+}
+
+.table-format-grid table {
+	border-collapse: collapse;
+	user-select: none;
+	touch-action: none;
+}
+
+.table-format-grid td {
+	border: 1px solid var(--background-modifier-border);
+	padding: var(--size-4-1) var(--size-4-2);
+	min-width: 3em;
+	height: 2em;
+	cursor: pointer;
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+.table-format-grid tr.is-header td {
+	font-weight: var(--bold-weight);
+	background-color: var(--background-secondary);
+}
+
+.table-format-grid td.is-merged {
+	text-align: center;
+}
+
+.table-format-grid td.is-selected {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.table-format-status {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
