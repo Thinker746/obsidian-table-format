@@ -85,3 +85,5 @@ git push --follow-tags
 ```
 
 推送标签后，GitHub Actions 会运行测试、构建，并创建 Release(附带 `main.js`、`manifest.json`、`styles.css` 和打包好的 zip)。
+
+也可以不打标签，直接在 GitHub 上手动发布：Actions → Release → Run workflow。工作流会按 `manifest.json` 里的版本号创建标签和 Release。
