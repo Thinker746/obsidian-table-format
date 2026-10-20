@@ -44,3 +44,17 @@
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 }
+
+/*
+ * Merged cells in Live Preview: covered cells stay in the DOM for the table
+ * editor and are only hidden. The selectors must outrank Obsidian's
+ * `.cm-table-widget td` rules.
+ */
+.markdown-source-view.mod-cm6 .cm-table-widget .table-editor td.table-format-covered,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-editor th.table-format-covered {
+	display: none;
+}
+
+.markdown-source-view.mod-cm6 .cm-table-widget .table-editor .table-format-merged {
+	vertical-align: middle;
+}

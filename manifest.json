@@ -1,7 +1,7 @@
 {
   "id": "table-format",
   "name": "Table Format",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "minAppVersion": "1.6.0",
   "description": "Select table cells and merge them (colspan / rowspan) in Markdown tables.",
   "author": "Thinker746",

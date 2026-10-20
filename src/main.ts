@@ -11,7 +11,7 @@ import {
 	moment,
 } from "obsidian";
 import { MERGE_ICON, SPLIT_ICON, registerIcons } from "./icons";
-import { selectedRange, tableEditorOf, tableOffset } from "./live-preview";
+import { liveMergeExtension, selectedRange, tableEditorOf, tableOffset } from "./live-preview";
 import { MergeAction, MergeCellsModal } from "./merge-modal";
 import { applyMergedCells } from "./render";
 import {
@@ -35,11 +35,13 @@ import {
 interface TableFormatSettings {
 	contentJoin: ContentJoin;
 	alignOnEdit: boolean;
+	livePreview: boolean;
 }
 
 const DEFAULT_SETTINGS: TableFormatSettings = {
 	contentJoin: "space",
 	alignOnEdit: true,
+	livePreview: true,
 };
 
 interface TableContext {
@@ -59,6 +61,7 @@ export default class TableFormatPlugin extends Plugin {
 		this.registerMarkdownPostProcessor((el) => {
 			el.querySelectorAll("table").forEach(applyMergedCells);
 		});
+		this.registerEditorExtension(liveMergeExtension(() => this.settings.livePreview));
 
 		this.addCommand({
 			id: "merge-selected-cells",
@@ -99,7 +102,7 @@ export default class TableFormatPlugin extends Plugin {
 			editorCheckCallback: (checking, editor, info) => {
 				const ctx = this.tableContext(editor, info);
 				if (!ctx) return false;
-				if (!checking) this.write(ctx, ctx.table, null, true);
+				if (!checking) this.write(ctx, ctx.table, ctx.selection, true);
 				return true;
 			},
 		});
@@ -189,7 +192,7 @@ export default class TableFormatPlugin extends Plugin {
 				.setSection("table")
 				.setIcon(MERGE_ICON)
 				.setTitle(zh ? "合并单元格" : "Merge cells")
-				.onClick(() => (blocker ? new Notice(blocker) : this.apply(ctx, "merge", rg, false))),
+				.onClick(() => (blocker ? new Notice(blocker) : this.apply(ctx, "merge", rg))),
 		);
 		if (canSplit(layout, rg)) {
 			menu.addItem((item) =>
@@ -197,7 +200,7 @@ export default class TableFormatPlugin extends Plugin {
 					.setSection("table")
 					.setIcon(SPLIT_ICON)
 					.setTitle(zh ? "拆分单元格" : "Split cells")
-					.onClick(() => this.apply(ctx, "split", rg, false)),
+					.onClick(() => this.apply(ctx, "split", rg)),
 			);
 		}
 	}
@@ -233,13 +236,13 @@ export default class TableFormatPlugin extends Plugin {
 		).open();
 	}
 
-	private apply(ctx: TableContext, action: MergeAction, range: CellRange, moveCursor = true): void {
+	private apply(ctx: TableContext, action: MergeAction, range: CellRange): void {
 		try {
 			const next =
 				action === "merge"
 					? mergeRange(ctx.table, range, this.settings.contentJoin)
 					: splitRange(ctx.table, range);
-			this.write(ctx, next, moveCursor ? range : null, this.settings.alignOnEdit);
+			this.write(ctx, next, range, this.settings.alignOnEdit);
 		} catch (e) {
 			new Notice(e instanceof Error ? e.message : String(e));
 		}
@@ -259,6 +262,9 @@ export default class TableFormatPlugin extends Plugin {
 			{ line: table.startLine, ch: 0 },
 			{ line: table.endLine, ch: editor.getLine(table.endLine).length },
 		);
+		// Put the cursor inside a cell: replacing the table maps it to the start
+		// of the header line, outside every cell, where Live Preview would show
+		// that line as raw Markdown next to the table widget.
 		if (range) {
 			const line = lineOfRow(next, range.r0);
 			editor.setCursor({ line, ch: chOfCell(editor.getLine(line), range.c0) });
@@ -297,6 +303,17 @@ class TableFormatSettingTab extends PluginSettingTab {
 				t.setValue(this.plugin.settings.alignOnEdit).onChange(async (v) => {
 					this.plugin.settings.alignOnEdit = v;
 					await this.plugin.saveSettings();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("实时预览中显示合并效果")
+			.setDesc("关闭后，实时预览中的表格显示原始的 < / ^ 标记(阅读视图不受影响)。")
+			.addToggle((t) =>
+				t.setValue(this.plugin.settings.livePreview).onChange(async (v) => {
+					this.plugin.settings.livePreview = v;
+					await this.plugin.saveSettings();
+					this.app.workspace.updateOptions();
 				}),
 			);
 	}
