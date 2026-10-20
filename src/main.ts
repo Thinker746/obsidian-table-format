@@ -1,17 +1,34 @@
-import { App, Editor, MarkdownFileInfo, MarkdownView, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import {
+	App,
+	Editor,
+	MarkdownFileInfo,
+	MarkdownView,
+	Menu,
+	Notice,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+	moment,
+} from "obsidian";
+import { MERGE_ICON, SPLIT_ICON, registerIcons } from "./icons";
+import { selectedRange, tableEditorOf, tableOffset } from "./live-preview";
 import { MergeAction, MergeCellsModal } from "./merge-modal";
 import { applyMergedCells } from "./render";
 import {
 	CellRange,
 	ContentJoin,
 	MarkdownTable,
+	canSplit,
 	cellAt,
 	chOfCell,
+	expandRange,
 	findTable,
 	formatTable,
 	lineOfRow,
+	mergeBlocker,
 	mergeRange,
 	normalizeRange,
+	resolveSpans,
 	splitRange,
 } from "./table";
 
@@ -37,6 +54,7 @@ export default class TableFormatPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		registerIcons();
 
 		this.registerMarkdownPostProcessor((el) => {
 			el.querySelectorAll("table").forEach(applyMergedCells);
@@ -99,6 +117,15 @@ export default class TableFormatPlugin extends Plugin {
 			}),
 		);
 
+		// The cell menu of the Live Preview table editor fires no workspace
+		// event, so hook the contextmenu event itself in every window.
+		this.registerDomEvent(document, "contextmenu", this.onContextMenu, { capture: true });
+		this.registerEvent(
+			this.app.workspace.on("window-open", (win) =>
+				this.registerDomEvent(win.doc, "contextmenu", this.onContextMenu, { capture: true }),
+			),
+		);
+
 		this.addSettingTab(new TableFormatSettingTab(this.app, this));
 	}
 
@@ -108,6 +135,71 @@ export default class TableFormatPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	/**
+	 * Adds merge / split items to the menu Obsidian shows for selected cells in
+	 * Live Preview. Obsidian builds that menu with `Menu.forEvent(evt)` while
+	 * the event bubbles and shows it in a timeout; this capture listener runs
+	 * first, so its timeout runs before the menu is shown and `Menu.forEvent`
+	 * returns the same, already filled menu.
+	 */
+	private onContextMenu = (evt: MouseEvent): void => {
+		const tableEl = tableEditorOf(evt.target);
+		const cell = evt.target instanceof Element ? evt.target.closest("td, th") : null;
+		if (!tableEl || !cell?.classList.contains("is-selected")) return;
+		const range = selectedRange(tableEl);
+		if (!range) return;
+
+		const ctx = this.widgetTableContext(tableEl);
+		if (!ctx) return;
+		(evt.view ?? window).setTimeout(() => {
+			if (evt.defaultPrevented) this.addCellMenuItems(Menu.forEvent(evt), ctx, range);
+		});
+	};
+
+	private widgetTableContext(tableEl: HTMLTableElement): TableContext | null {
+		const view = this.app.workspace
+			.getLeavesOfType("markdown")
+			.map((leaf) => leaf.view)
+			.find((v): v is MarkdownView => v instanceof MarkdownView && v.containerEl.contains(tableEl));
+		const offset = tableOffset(tableEl);
+		if (!view || offset === null) return null;
+
+		const editor = view.editor;
+		const line = editor.offsetToPos(offset).line;
+		// The widget may start on the line before the header row.
+		for (const l of [line, line + 1]) {
+			const table = findTable((n) => editor.getLine(n), editor.lineCount(), l);
+			if (table?.startLine === l && table.rows.length === tableEl.rows.length) {
+				return { editor, table, selection: null };
+			}
+		}
+		return null;
+	}
+
+	private addCellMenuItems(menu: Menu, ctx: TableContext, range: CellRange): void {
+		const zh = moment.locale().startsWith("zh");
+		const layout = resolveSpans(ctx.table.rows);
+		const rg = expandRange(layout, range);
+		const blocker = mergeBlocker(rg);
+
+		menu.addItem((item) =>
+			item
+				.setSection("table")
+				.setIcon(MERGE_ICON)
+				.setTitle(zh ? "合并单元格" : "Merge cells")
+				.onClick(() => (blocker ? new Notice(blocker) : this.apply(ctx, "merge", rg, false))),
+		);
+		if (canSplit(layout, rg)) {
+			menu.addItem((item) =>
+				item
+					.setSection("table")
+					.setIcon(SPLIT_ICON)
+					.setTitle(zh ? "拆分单元格" : "Split cells")
+					.onClick(() => this.apply(ctx, "split", rg, false)),
+			);
+		}
 	}
 
 	/**
@@ -141,13 +233,13 @@ export default class TableFormatPlugin extends Plugin {
 		).open();
 	}
 
-	private apply(ctx: TableContext, action: MergeAction, range: CellRange): void {
+	private apply(ctx: TableContext, action: MergeAction, range: CellRange, moveCursor = true): void {
 		try {
 			const next =
 				action === "merge"
 					? mergeRange(ctx.table, range, this.settings.contentJoin)
 					: splitRange(ctx.table, range);
-			this.write(ctx, next, range, this.settings.alignOnEdit);
+			this.write(ctx, next, moveCursor ? range : null, this.settings.alignOnEdit);
 		} catch (e) {
 			new Notice(e instanceof Error ? e.message : String(e));
 		}
