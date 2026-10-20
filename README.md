@@ -65,7 +65,8 @@
 
 1. 打开 [Releases](https://github.com/Thinker746/obsidian-table-format/releases)，下载最新版本的 `table-format-<版本号>.zip`。
 2. 解压到库目录下的 `.obsidian/plugins/`，得到 `.obsidian/plugins/table-format/`(里面有 `main.js`、`manifest.json`、`styles.css`)。
-3. 重启 Obsidian 或在「设置 → 第三方插件」中刷新，然后启用 **Table Format**。
+   注意：zip 里已经带有 `table-format/` 文件夹，不要再解压到 `plugins/table-format/` 里面，否则会变成 `plugins/table-format/table-format/main.js`，Obsidian 读不到新文件。
+3. 重启 Obsidian 或在「设置 → 第三方插件」中刷新，然后启用 **Table Format**。更新插件后，要先关闭再重新启用插件(或重启 Obsidian)，新版本才会生效。
 
 也可以用 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 插件，填入 `Thinker746/obsidian-table-format`，自动安装和更新。
 
