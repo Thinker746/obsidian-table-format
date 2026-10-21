@@ -1,6 +1,6 @@
 {
   "name": "obsidian-table-format",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Merge table cells (colspan / rowspan) in Obsidian Markdown tables.",
   "main": "main.js",
   "scripts": {
