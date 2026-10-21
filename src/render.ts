@@ -47,6 +47,18 @@ function liveCellText(cell: HTMLTableCellElement): string {
 	return cell.querySelector(".table-cell-wrapper")?.textContent ?? cell.textContent ?? "";
 }
 
+/** The Live Preview table whose cells are being selected by dragging, if any. */
+let selectingTable: HTMLTableElement | null = null;
+
+export function setSelectingTable(table: HTMLTableElement | null): void {
+	selectingTable = table;
+}
+
+/** The real rect of a cell, bypassing the overrides installed below. */
+function nativeRect(cell: HTMLTableCellElement): DOMRect {
+	return Element.prototype.getBoundingClientRect.call(cell);
+}
+
 function setSpan(cell: HTMLTableCellElement, colspan: number, rowspan: number): void {
 	if (cell.colSpan !== colspan) cell.colSpan = colspan;
 	if (cell.rowSpan !== rowspan) cell.rowSpan = rowspan;
@@ -60,19 +72,19 @@ function setSpan(cell: HTMLTableCellElement, colspan: number, rowspan: number): 
  */
 function slotRect(cells: HTMLTableCellElement[][], layout: SpanLayout, r: number, c: number): DOMRect {
 	const reg = layout.regionAt[r][c];
-	const merged = cells[reg.row][reg.col].getBoundingClientRect();
+	const merged = nativeRect(cells[reg.row][reg.col]);
 	const single = (rr: number, cc: number, key: "colspan" | "rowspan") =>
 		layout.role[rr][cc] === "anchor" && layout.regionAt[rr][cc][key] === 1;
 
 	const inColumn = cells.findIndex((_, rr) => single(rr, c, "colspan"));
 	let left = merged.left + (merged.width / reg.colspan) * (c - reg.col);
 	let right = left + merged.width / reg.colspan;
-	if (inColumn >= 0) ({ left, right } = cells[inColumn][c].getBoundingClientRect());
+	if (inColumn >= 0) ({ left, right } = nativeRect(cells[inColumn][c]));
 
 	const inRow = cells[r].findIndex((_, cc) => single(r, cc, "rowspan"));
 	let top = merged.top + (merged.height / reg.rowspan) * (r - reg.row);
 	let bottom = top + merged.height / reg.rowspan;
-	if (inRow >= 0) ({ top, bottom } = cells[r][inRow].getBoundingClientRect());
+	if (inRow >= 0) ({ top, bottom } = nativeRect(cells[r][inRow]));
 
 	return new DOMRect(left, top, right - left, bottom - top);
 }
@@ -87,6 +99,12 @@ function slotRect(cells: HTMLTableCellElement[][], layout: SpanLayout, r: number
  * locking while editing) and stops searching at the first cell that is
  * farther away, so a hidden cell's zero rect would cut the search short.
  * Hidden cells therefore report the rect of their slot in the grid.
+ *
+ * While cells are drag-selected, merged cells report their top-left slot as
+ * well: the table editor picks the row under the pointer by the first cell of
+ * each row, and a merged cell spanning rows would claim the rows below it, so
+ * a drag below the merged cell would select it. Otherwise merged cells keep
+ * their real rect, which the table editor needs to size the cell editor.
  */
 export function applyLiveMergedCells(table: HTMLTableElement, enabled: boolean): void {
 	const cells = cellsOf(table);
@@ -102,13 +120,19 @@ export function applyLiveMergedCells(table: HTMLTableElement, enabled: boolean):
 			const { rowspan, colspan } = layout.regionAt[r][c];
 			const anchor = merge && role === "anchor";
 			setSpan(cell, anchor ? colspan : 1, anchor ? rowspan : 1);
-			cell.classList.toggle(MERGED, anchor && (colspan > 1 || rowspan > 1));
+			const spanning = anchor && (colspan > 1 || rowspan > 1);
+			cell.classList.toggle(MERGED, spanning);
 			const covered = merge && role === "covered";
 			cell.classList.toggle(COVERED, covered);
 			if (covered) {
 				Object.defineProperty(cell, "getBoundingClientRect", {
 					configurable: true,
 					value: () => slotRect(cells, layout, r, c),
+				});
+			} else if (spanning) {
+				Object.defineProperty(cell, "getBoundingClientRect", {
+					configurable: true,
+					value: () => (selectingTable === table ? slotRect(cells, layout, r, c) : nativeRect(cell)),
 				});
 			} else if (Object.prototype.hasOwnProperty.call(cell, "getBoundingClientRect")) {
 				delete (cell as { getBoundingClientRect?: unknown }).getBoundingClientRect;

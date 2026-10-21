@@ -1,5 +1,5 @@
 import { EditorView, ViewPlugin } from "@codemirror/view";
-import { applyLiveMergedCells } from "./render";
+import { applyLiveMergedCells, setSelectingTable } from "./render";
 import { CellRange } from "./table";
 
 /**
@@ -66,6 +66,10 @@ export function liveMergeExtension(enabled: () => boolean) {
 					this.schedule();
 				});
 				this.observer.observe(view.contentDOM, { childList: true, subtree: true, characterData: true });
+				// Capture phase: runs before the table editor's own pointer handlers.
+				view.contentDOM.addEventListener("pointerdown", this.onPointerDown, true);
+				view.contentDOM.ownerDocument.addEventListener("pointerup", this.onPointerUp, true);
+				view.contentDOM.ownerDocument.addEventListener("pointercancel", this.onPointerUp, true);
 				this.schedule();
 			}
 
@@ -75,8 +79,18 @@ export function liveMergeExtension(enabled: () => boolean) {
 
 			destroy(): void {
 				this.observer.disconnect();
+				this.view.contentDOM.removeEventListener("pointerdown", this.onPointerDown, true);
+				this.view.contentDOM.ownerDocument.removeEventListener("pointerup", this.onPointerUp, true);
+				this.view.contentDOM.ownerDocument.removeEventListener("pointercancel", this.onPointerUp, true);
 				if (this.frame !== null) cancelAnimationFrame(this.frame);
 			}
+
+			/** Marks the table whose cells may be drag-selected until the pointer is released. */
+			private onPointerDown = (evt: PointerEvent): void => {
+				if (evt.button === 0) setSelectingTable(tableEditorOf(evt.target));
+			};
+
+			private onPointerUp = (): void => setSelectingTable(null);
 
 			/**
 			 * Keyboard navigation (Tab, arrows) can open a cell editor inside a
