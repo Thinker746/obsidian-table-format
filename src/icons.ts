@@ -9,8 +9,14 @@ const FRAME = '<path d="M3 9h18"/><path d="M3 15h18"/><rect x="3" y="3" width="1
 
 export const MERGE_ICON = "table-format-merge";
 export const SPLIT_ICON = "table-format-split";
+// Lucide "grid-2x2": a single cell divided into rows and columns.
+export const SPLIT_CELL_ICON = "table-format-split-cell";
 
 export function registerIcons(): void {
 	addIcon(MERGE_ICON, `<g ${LUCIDE_ATTRS}><path d="M12 21v-6"/><path d="M12 9V3"/>${FRAME}</g>`);
 	addIcon(SPLIT_ICON, `<g ${LUCIDE_ATTRS}><path d="M12 15V9"/>${FRAME}</g>`);
+	addIcon(
+		SPLIT_CELL_ICON,
+		`<g ${LUCIDE_ATTRS}><path d="M12 3v18"/><path d="M3 12h18"/><rect x="3" y="3" width="18" height="18" rx="2"/></g>`,
+	);
 }

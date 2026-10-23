@@ -9,6 +9,7 @@ import {
 	formatTable,
 	mergeRange,
 	resolveSpans,
+	splitCell,
 	splitRange,
 	splitRow,
 } from "../src/table";
@@ -129,6 +130,72 @@ test("splitRange clears markers of touched regions", () => {
 		["1 2 4 5", "", "3"],
 		["", "", "6"],
 	]);
+});
+
+test("splitCell into columns inserts columns the other rows span", () => {
+	const t = parse(SAMPLE);
+	const out = splitCell(t, { row: 2, col: 1 }, 1, 3);
+	assert.deepEqual(out.aligns, [null, "center", "center", "center", "right"]);
+	assert.deepEqual(out.rows, [
+		["A", "B", "<", "<", "C"],
+		["1", "2", "<", "<", "3"],
+		["4", "5", "", "", "6"],
+		["7", "8", "<", "<", "9"],
+	]);
+	const layout = resolveSpans(out.rows);
+	assert.deepEqual(layout.regionAt[0][1], { row: 0, col: 1, rowspan: 1, colspan: 3 });
+	assert.equal(out.endLine, t.endLine);
+});
+
+test("splitCell into rows inserts rows the other columns span", () => {
+	const t = parse(SAMPLE);
+	const out = splitCell(t, { row: 1, col: 2 }, 2, 1);
+	assert.deepEqual(out.rows.slice(1), [
+		["1", "2", "3"],
+		["^", "^", ""],
+		["4", "5", "6"],
+		["7", "8", "9"],
+	]);
+	assert.equal(out.endLine, t.endLine + 1);
+	assert.deepEqual(resolveSpans(out.rows).regionAt[2][0], { row: 1, col: 0, rowspan: 2, colspan: 1 });
+});
+
+test("splitCell into rows and columns keeps existing merges intact", () => {
+	let t = parse(SAMPLE);
+	t = mergeRange(t, { r0: 1, c0: 1, r1: 1, c1: 2 }, "space");
+	const out = splitCell(t, { row: 2, col: 0 }, 2, 2);
+	assert.deepEqual(out.rows, [
+		["A", "<", "B", "C"],
+		["1", "<", "2 3", "<"],
+		["4", "", "5", "6"],
+		["", "", "^", "^"],
+		["7", "<", "8", "9"],
+	]);
+	const layout = resolveSpans(out.rows);
+	assert.deepEqual(layout.regionAt[1][2], { row: 1, col: 2, rowspan: 1, colspan: 2 });
+	assert.deepEqual(layout.regionAt[3][3], { row: 2, col: 3, rowspan: 2, colspan: 1 });
+	assert.equal(layout.role[3][0], "anchor");
+});
+
+test("splitCell redistributes a merged cell without inserting when it is large enough", () => {
+	let t = parse(SAMPLE);
+	t = mergeRange(t, { r0: 1, c0: 0, r1: 3, c1: 2 }, "first");
+	const out = splitCell(t, { row: 2, col: 1 }, 2, 3);
+	assert.deepEqual(out.rows.slice(1), [
+		["1", "", ""],
+		["^", "^", "^"],
+		["", "", ""],
+	]);
+	assert.equal(out.aligns.length, 3);
+});
+
+test("splitCell validates its input", () => {
+	const t = parse(SAMPLE);
+	assert.deepEqual(splitCell(t, { row: 0, col: 0 }, 1, 2).rows[0], ["A", "", "B", "C"]);
+	assert.throws(() => splitCell(t, { row: 0, col: 0 }, 2, 1), /表头/);
+	assert.throws(() => splitCell(t, { row: 1, col: 0 }, 1, 1), /两个/);
+	assert.throws(() => splitCell(t, { row: 1, col: 0 }, 0, 2), /正整数/);
+	assert.throws(() => splitCell(t, { row: 1, col: 0 }, 1, 21), /20/);
 });
 
 test("formatTable aligns columns with CJK width and keeps alignment markers", () => {

@@ -10,11 +10,13 @@ import {
 	Setting,
 	moment,
 } from "obsidian";
-import { MERGE_ICON, SPLIT_ICON, registerIcons } from "./icons";
+import { MERGE_ICON, SPLIT_CELL_ICON, SPLIT_ICON, registerIcons } from "./icons";
 import { liveMergeExtension, selectedRange, tableEditorOf, tableOffset } from "./live-preview";
 import { MergeAction, MergeCellsModal } from "./merge-modal";
 import { applyMergedCells } from "./render";
+import { SplitCellModal } from "./split-cell-modal";
 import {
+	CellPos,
 	CellRange,
 	ContentJoin,
 	MarkdownTable,
@@ -29,6 +31,7 @@ import {
 	mergeRange,
 	normalizeRange,
 	resolveSpans,
+	splitCell,
 	splitRange,
 } from "./table";
 
@@ -51,12 +54,18 @@ interface TableContext {
 	table: MarkdownTable;
 	/** The cells covered by the editor selection, or null if it is on the delimiter row. */
 	selection: CellRange | null;
+	/** The cell holding the cursor (or right-clicked in Live Preview), if any. */
+	cursor: CellPos | null;
 }
 
 export default class TableFormatPlugin extends Plugin {
 	settings: TableFormatSettings = DEFAULT_SETTINGS;
 	/** Documents of the main window and open popout windows. */
 	private docs = new Set<Document>([document]);
+	/** The Live Preview cell being right-clicked, while its menu is built. */
+	private menuCell: TableContext | null = null;
+	/** Menus that already have a "Split Cell" item. */
+	private splitCellMenus = new WeakSet<Menu>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -102,6 +111,17 @@ export default class TableFormatPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "split-cell",
+			name: "分裂单元格(拆成几行几列)",
+			editorCheckCallback: (checking, editor, info) => {
+				const ctx = this.tableContext(editor, info);
+				if (!ctx?.cursor) return false;
+				if (!checking) this.openSplitCell(ctx, ctx.cursor);
+				return true;
+			},
+		});
+
+		this.addCommand({
 			id: "format-table",
 			name: "对齐表格列宽",
 			editorCheckCallback: (checking, editor, info) => {
@@ -115,13 +135,18 @@ export default class TableFormatPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on("editor-menu", (menu, editor, info) => {
 				const ctx = this.tableContext(editor, info);
-				if (!ctx) return;
-				menu.addItem((item) =>
-					item
-						.setTitle("合并单元格…")
-						.setIcon("table")
-						.onClick(() => this.openPanel(ctx)),
-				);
+				if (ctx) {
+					menu.addItem((item) =>
+						item
+							.setTitle("合并单元格…")
+							.setIcon("table")
+							.onClick(() => this.openPanel(ctx)),
+					);
+				}
+				// In Live Preview the right-clicked cell is more reliable than the
+				// main editor's selection.
+				const target = this.menuCell ?? ctx;
+				if (target?.cursor) this.addSplitCellItem(menu, target, target.cursor);
 			}),
 		);
 
@@ -158,22 +183,31 @@ export default class TableFormatPlugin extends Plugin {
 
 	/**
 	 * Adds merge / split items to the menu Obsidian shows for selected cells in
-	 * Live Preview. Obsidian builds that menu with `Menu.forEvent(evt)` while
-	 * the event bubbles and shows it in a timeout; this capture listener runs
-	 * first, so its timeout runs before the menu is shown and `Menu.forEvent`
-	 * returns the same, already filled menu.
+	 * Live Preview, and "Split Cell" to the menu of a single cell. Obsidian
+	 * builds those menus with `Menu.forEvent(evt)` while the event bubbles and
+	 * shows them in a timeout; this capture listener runs first, so its timeout
+	 * runs before the menu is shown and `Menu.forEvent` returns the same,
+	 * already filled menu.
 	 */
 	private onContextMenu = (evt: MouseEvent): void => {
 		const tableEl = tableEditorOf(evt.target);
-		const cell = evt.target instanceof Element ? evt.target.closest("td, th") : null;
-		if (!tableEl || !cell?.classList.contains("is-selected")) return;
-		const range = selectedRange(tableEl);
-		if (!range) return;
+		const cell = evt.target instanceof Element ? evt.target.closest<HTMLTableCellElement>("td, th") : null;
+		const tr = cell?.parentElement;
+		if (!tableEl || !cell || !(tr instanceof HTMLTableRowElement) || cell.closest("table") !== tableEl) return;
+		const range = cell.classList.contains("is-selected") ? selectedRange(tableEl) : null;
 
 		const ctx = this.widgetTableContext(tableEl);
 		if (!ctx) return;
+		if (!range) {
+			ctx.cursor = { row: tr.rowIndex, col: cell.cellIndex };
+			this.menuCell = ctx;
+		}
 		(evt.view ?? window).setTimeout(() => {
-			if (evt.defaultPrevented) this.addCellMenuItems(Menu.forEvent(evt), ctx, range);
+			this.menuCell = null;
+			if (!evt.defaultPrevented) return;
+			const menu = Menu.forEvent(evt);
+			if (range) this.addCellMenuItems(menu, ctx, range);
+			else if (ctx.cursor) this.addSplitCellItem(menu, ctx, ctx.cursor);
 		});
 	};
 
@@ -191,7 +225,7 @@ export default class TableFormatPlugin extends Plugin {
 		for (const l of [line, line + 1]) {
 			const table = findTable((n) => editor.getLine(n), editor.lineCount(), l);
 			if (table?.startLine === l && table.rows.length === tableEl.rows.length) {
-				return { editor, table, selection: null };
+				return { editor, table, selection: null, cursor: null };
 			}
 		}
 		return null;
@@ -219,6 +253,23 @@ export default class TableFormatPlugin extends Plugin {
 					.onClick(() => this.apply(ctx, "split", rg)),
 			);
 		}
+		const reg = layout.regionAt[rg.r0][rg.c0];
+		if (rg.r1 === reg.row + reg.rowspan - 1 && rg.c1 === reg.col + reg.colspan - 1) {
+			this.addSplitCellItem(menu, ctx, { row: rg.r0, col: rg.c0 });
+		}
+	}
+
+	private addSplitCellItem(menu: Menu, ctx: TableContext, cell: CellPos): void {
+		if (this.splitCellMenus.has(menu)) return;
+		this.splitCellMenus.add(menu);
+		const zh = moment.locale().startsWith("zh");
+		menu.addItem((item) =>
+			item
+				.setSection("table")
+				.setIcon(SPLIT_CELL_ICON)
+				.setTitle(zh ? "分裂单元格…" : "Split Cell…")
+				.onClick(() => this.openSplitCell(ctx, cell)),
+		);
 	}
 
 	/**
@@ -237,7 +288,7 @@ export default class TableFormatPlugin extends Plugin {
 		const h = cellAt(table, sel.head.line, sel.head.ch, main.getLine(sel.head.line));
 		const one = a ?? h;
 		const selection = a && h ? normalizeRange(a, h) : one ? normalizeRange(one, one) : null;
-		return { editor: main, table, selection };
+		return { editor: main, table, selection, cursor: h ?? a };
 	}
 
 	private mergeFromSelection(ctx: TableContext): void {
@@ -250,6 +301,19 @@ export default class TableFormatPlugin extends Plugin {
 		new MergeCellsModal(this.app, ctx.table, ctx.selection, (action, range) =>
 			this.apply(ctx, action, range),
 		).open();
+	}
+
+	private openSplitCell(ctx: TableContext, cell: CellPos): void {
+		new SplitCellModal(this.app, ctx.table, cell, (rows, cols) => {
+			try {
+				const next = splitCell(ctx.table, cell, rows, cols);
+				const reg = resolveSpans(ctx.table.rows).regionAt[cell.row][cell.col];
+				const topLeft = { r0: reg.row, c0: reg.col, r1: reg.row, c1: reg.col };
+				this.write(ctx, next, topLeft, this.settings.alignOnEdit);
+			} catch (e) {
+				new Notice(e instanceof Error ? e.message : String(e));
+			}
+		}).open();
 	}
 
 	private apply(ctx: TableContext, action: MergeAction, range: CellRange): void {

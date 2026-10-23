@@ -324,6 +324,72 @@ export function splitRange(t: MarkdownTable, range: CellRange): MarkdownTable {
 	return out;
 }
 
+export const MAX_SPLIT = 20;
+
+/** Why the cell at `cell` cannot be split into `rows` x `cols`, or null when it can. */
+export function splitCellBlocker(cell: CellPos, rows: number, cols: number): string | null {
+	if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 1 || cols < 1) {
+		return "行数和列数必须是正整数";
+	}
+	if (rows > MAX_SPLIT || cols > MAX_SPLIT) return `行数和列数不能超过 ${MAX_SPLIT}`;
+	if (rows === 1 && cols === 1) return "请至少分成两个单元格";
+	if (cell.row === 0 && rows > 1) return "表头单元格只能按列分裂";
+	return null;
+}
+
+/** Sizes of `parts` near-equal groups that together cover `total` cells. */
+function partition(total: number, parts: number): number[] {
+	const base = Math.floor(total / parts);
+	return Array.from({ length: parts }, (_, i) => base + (i < total % parts ? 1 : 0));
+}
+
+/**
+ * Splits the cell at `cell` (or the merged region it belongs to) into
+ * `rows` x `cols` cells. When the region has fewer rows / columns than
+ * requested, new rows are inserted below it and new columns to its right;
+ * the other cells of the table are merged across them so they look the same
+ * as before. The content stays in the top-left part.
+ */
+export function splitCell(t: MarkdownTable, cell: CellPos, rows: number, cols: number): MarkdownTable {
+	const blocker = splitCellBlocker(cell, rows, cols);
+	if (blocker) throw new Error(blocker);
+
+	const layout = resolveSpans(t.rows);
+	const reg = layout.regionAt[cell.row][cell.col];
+	const content = layout.role[reg.row][reg.col] === "stray" ? "" : t.rows[reg.row][reg.col];
+	const lastRow = reg.row + reg.rowspan - 1;
+	const lastCol = reg.col + reg.colspan - 1;
+	const addRows = Math.max(0, rows - reg.rowspan);
+	const addCols = Math.max(0, cols - reg.colspan);
+
+	const out = cloneTable(t);
+	// New columns join the cell on their left, new rows the cell above them.
+	out.aligns.splice(lastCol + 1, 0, ...Array<Align>(addCols).fill(t.aligns[lastCol]));
+	for (const row of out.rows) row.splice(lastCol + 1, 0, ...Array<string>(addCols).fill(MERGE_LEFT));
+	const below: string[] = t.rows[lastRow].map((_, c) =>
+		layout.regionAt[lastRow][c].col === c ? MERGE_UP : MERGE_LEFT,
+	);
+	below.splice(lastCol + 1, 0, ...Array<string>(addCols).fill(""));
+	for (let i = 0; i < addRows; i++) out.rows.splice(lastRow + 1, 0, [...below]);
+	out.endLine += addRows;
+
+	let r = reg.row;
+	for (const h of partition(reg.rowspan + addRows, rows)) {
+		let c = reg.col;
+		for (const w of partition(reg.colspan + addCols, cols)) {
+			for (let rr = r; rr < r + h; rr++) {
+				for (let cc = c; cc < c + w; cc++) {
+					out.rows[rr][cc] = rr === r && cc === c ? "" : cc === c ? MERGE_UP : MERGE_LEFT;
+				}
+			}
+			c += w;
+		}
+		r += h;
+	}
+	out.rows[reg.row][reg.col] = content;
+	return out;
+}
+
 // ---------------------------------------------------------------------------
 // Formatting
 
