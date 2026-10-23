@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
 	MarkdownTable,
+	canUnsplit,
 	cellAt,
 	displayWidth,
 	expandRange,
@@ -12,6 +13,7 @@ import {
 	splitCell,
 	splitRange,
 	splitRow,
+	unsplitRange,
 } from "../src/table";
 
 function parse(md: string, lineNo = 0): MarkdownTable {
@@ -196,6 +198,48 @@ test("splitCell validates its input", () => {
 	assert.throws(() => splitCell(t, { row: 1, col: 0 }, 1, 1), /两个/);
 	assert.throws(() => splitCell(t, { row: 1, col: 0 }, 0, 2), /正整数/);
 	assert.throws(() => splitCell(t, { row: 1, col: 0 }, 1, 21), /20/);
+});
+
+test("unsplitRange restores the table from before splitCell", () => {
+	const t = parse(SAMPLE);
+	const merged = mergeRange(t, { r0: 1, c0: 1, r1: 1, c1: 2 }, "space");
+	const cases: [MarkdownTable, number, number, number, number, { r0: number; c0: number; r1: number; c1: number }][] = [
+		[t, 2, 1, 1, 3, { r0: 2, c0: 1, r1: 2, c1: 3 }],
+		[t, 1, 2, 2, 1, { r0: 1, c0: 2, r1: 2, c1: 2 }],
+		[t, 0, 0, 1, 2, { r0: 0, c0: 0, r1: 0, c1: 1 }],
+		[merged, 2, 0, 2, 2, { r0: 2, c0: 0, r1: 3, c1: 1 }],
+		[t, 3, 2, 3, 4, { r0: 3, c0: 2, r1: 5, c1: 5 }],
+	];
+	for (const [table, row, col, rows, cols, block] of cases) {
+		const split = splitCell(table, { row, col }, rows, cols);
+		assert.ok(canUnsplit(split, block));
+		const back = unsplitRange(split, block, "space");
+		assert.deepEqual(back.rows, table.rows);
+		assert.deepEqual(back.aligns, table.aligns);
+		assert.equal(back.endLine, table.endLine);
+	}
+});
+
+test("unsplitRange joins typed content and can undo part of a split", () => {
+	const split = splitCell(parse(SAMPLE), { row: 2, col: 1 }, 1, 3);
+	split.rows[2][2] = "x";
+	assert.equal(unsplitRange(split, { r0: 2, c0: 1, r1: 2, c1: 3 }, "space").rows[2][1], "5 x");
+
+	const partial = unsplitRange(split, { r0: 2, c0: 2, r1: 2, c1: 3 }, "space");
+	assert.deepEqual(partial.rows, [
+		["A", "B", "<", "C"],
+		["1", "2", "<", "3"],
+		["4", "5", "x", "6"],
+		["7", "8", "<", "9"],
+	]);
+});
+
+test("canUnsplit is false when merging would not remove rows or columns", () => {
+	const t = parse(SAMPLE);
+	assert.equal(canUnsplit(t, { r0: 1, c0: 0, r1: 2, c1: 1 }), false);
+	assert.equal(canUnsplit(t, { r0: 0, c0: 0, r1: 1, c1: 0 }), false, "header cannot merge with the body");
+	const big = mergeRange(t, { r0: 1, c0: 0, r1: 2, c1: 2 }, "first");
+	assert.equal(canUnsplit(splitCell(big, { row: 1, col: 0 }, 1, 3), { r0: 1, c0: 0, r1: 2, c1: 2 }), false);
 });
 
 test("formatTable aligns columns with CJK width and keeps alignment markers", () => {

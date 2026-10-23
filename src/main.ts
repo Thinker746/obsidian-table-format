@@ -21,6 +21,7 @@ import {
 	ContentJoin,
 	MarkdownTable,
 	canSplit,
+	canUnsplit,
 	cellAt,
 	chOfCell,
 	expandRange,
@@ -33,6 +34,7 @@ import {
 	resolveSpans,
 	splitCell,
 	splitRange,
+	unsplitRange,
 } from "./table";
 
 interface TableFormatSettings {
@@ -64,8 +66,8 @@ export default class TableFormatPlugin extends Plugin {
 	private docs = new Set<Document>([document]);
 	/** The Live Preview cell being right-clicked, while its menu is built. */
 	private menuCell: TableContext | null = null;
-	/** Menus that already have a "Split Cell" item. */
-	private splitCellMenus = new WeakSet<Menu>();
+	/** Items already added to a menu, which can be reached from two handlers. */
+	private menuItems = new WeakMap<Menu, Set<string>>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -122,6 +124,17 @@ export default class TableFormatPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "unsplit-cells",
+			name: "取消分裂(恢复成一个单元格)",
+			editorCheckCallback: (checking, editor, info) => {
+				const ctx = this.tableContext(editor, info);
+				if (!ctx?.selection || !canUnsplit(ctx.table, ctx.selection)) return false;
+				if (!checking) this.apply(ctx, "unsplit", ctx.selection);
+				return true;
+			},
+		});
+
+		this.addCommand({
 			id: "format-table",
 			name: "对齐表格列宽",
 			editorCheckCallback: (checking, editor, info) => {
@@ -147,6 +160,10 @@ export default class TableFormatPlugin extends Plugin {
 				// main editor's selection.
 				const target = this.menuCell ?? ctx;
 				if (target?.cursor) this.addSplitCellItem(menu, target, target.cursor);
+				const sel = ctx?.selection;
+				if (ctx && sel && !this.menuCell && (sel.r0 !== sel.r1 || sel.c0 !== sel.c1)) {
+					this.addUnsplitItem(menu, ctx, sel);
+				}
 			}),
 		);
 
@@ -244,6 +261,7 @@ export default class TableFormatPlugin extends Plugin {
 				.setTitle(zh ? "合并单元格" : "Merge cells")
 				.onClick(() => (blocker ? new Notice(blocker) : this.apply(ctx, "merge", rg))),
 		);
+		this.addUnsplitItem(menu, ctx, rg);
 		if (canSplit(layout, rg)) {
 			menu.addItem((item) =>
 				item
@@ -259,9 +277,29 @@ export default class TableFormatPlugin extends Plugin {
 		}
 	}
 
+	/** Returns false when `menu` already has the item `key`. */
+	private addOnce(menu: Menu, key: string): boolean {
+		const keys = this.menuItems.get(menu) ?? new Set<string>();
+		this.menuItems.set(menu, keys);
+		if (keys.has(key)) return false;
+		keys.add(key);
+		return true;
+	}
+
+	private addUnsplitItem(menu: Menu, ctx: TableContext, range: CellRange): void {
+		if (!canUnsplit(ctx.table, range) || !this.addOnce(menu, "unsplit")) return;
+		const zh = moment.locale().startsWith("zh");
+		menu.addItem((item) =>
+			item
+				.setSection("table")
+				.setIcon("undo-2")
+				.setTitle(zh ? "取消分裂" : "Unsplit cells")
+				.onClick(() => this.apply(ctx, "unsplit", range)),
+		);
+	}
+
 	private addSplitCellItem(menu: Menu, ctx: TableContext, cell: CellPos): void {
-		if (this.splitCellMenus.has(menu)) return;
-		this.splitCellMenus.add(menu);
+		if (!this.addOnce(menu, "split-cell")) return;
 		const zh = moment.locale().startsWith("zh");
 		menu.addItem((item) =>
 			item
@@ -318,10 +356,13 @@ export default class TableFormatPlugin extends Plugin {
 
 	private apply(ctx: TableContext, action: MergeAction, range: CellRange): void {
 		try {
+			const join = this.settings.contentJoin;
 			const next =
 				action === "merge"
-					? mergeRange(ctx.table, range, this.settings.contentJoin)
-					: splitRange(ctx.table, range);
+					? mergeRange(ctx.table, range, join)
+					: action === "unsplit"
+						? unsplitRange(ctx.table, range, join)
+						: splitRange(ctx.table, range);
 			this.write(ctx, next, range, this.settings.alignOnEdit);
 		} catch (e) {
 			new Notice(e instanceof Error ? e.message : String(e));

@@ -390,6 +390,63 @@ export function splitCell(t: MarkdownTable, cell: CellPos, rows: number, cols: n
 	return out;
 }
 
+/**
+ * Rows / columns inside `rg` that only continue merges: every cell of such a
+ * column belongs to the same region as its left neighbour, every cell of
+ * such a row to the same region as the cell above.
+ */
+function redundantLines(rows: string[][], rg: CellRange): { rows: Set<number>; cols: Set<number> } {
+	const { regionAt } = resolveSpans(rows);
+	const out = { rows: new Set<number>(), cols: new Set<number>() };
+	for (let c = rg.c0 + 1; c <= rg.c1; c++) {
+		if (regionAt.every((row) => row[c] === row[c - 1])) out.cols.add(c);
+	}
+	// Row 1 is the first body row and cannot continue the header.
+	for (let r = Math.max(rg.r0 + 1, 2); r <= rg.r1; r++) {
+		if (regionAt[r].every((reg, c) => reg === regionAt[r - 1][c])) out.rows.add(r);
+	}
+	return out;
+}
+
+/**
+ * Merges `range` like `mergeRange` and lists the rows / columns left over
+ * from a split: those the merge makes redundant, so removing them changes
+ * nothing visible. Lines that were redundant already are kept.
+ */
+function unsplitPlan(t: MarkdownTable, range: CellRange, join: ContentJoin) {
+	const rg = expandRange(resolveSpans(t.rows), range);
+	const merged = mergeRange(t, rg, join);
+	const before = redundantLines(t.rows, rg);
+	const after = redundantLines(merged.rows, rg);
+	return {
+		merged,
+		dropRows: new Set([...after.rows].filter((r) => !before.rows.has(r))),
+		dropCols: new Set([...after.cols].filter((c) => !before.cols.has(c))),
+	};
+}
+
+/** Whether merging `range` back would remove rows or columns inserted by a split. */
+export function canUnsplit(t: MarkdownTable, range: CellRange): boolean {
+	const rg = expandRange(resolveSpans(t.rows), range);
+	if (mergeBlocker(rg)) return false;
+	const { dropRows, dropCols } = unsplitPlan(t, rg, "first");
+	return dropRows.size + dropCols.size > 0;
+}
+
+/**
+ * Undoes `splitCell`: merges the cells in `range` back into one and removes
+ * the rows and columns the split inserted.
+ */
+export function unsplitRange(t: MarkdownTable, range: CellRange, join: ContentJoin): MarkdownTable {
+	const { merged, dropRows, dropCols } = unsplitPlan(t, range, join);
+	return {
+		...merged,
+		endLine: merged.endLine - dropRows.size,
+		aligns: merged.aligns.filter((_, c) => !dropCols.has(c)),
+		rows: merged.rows.filter((_, r) => !dropRows.has(r)).map((row) => row.filter((_, c) => !dropCols.has(c))),
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Formatting
 

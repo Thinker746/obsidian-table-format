@@ -11,7 +11,7 @@ import {
 	resolveSpans,
 } from "./table";
 
-export type MergeAction = "merge" | "split";
+export type MergeAction = "merge" | "split" | "unsplit";
 
 const PREVIEW_LENGTH = 24;
 
