@@ -4,14 +4,14 @@ import {
 	CellRange,
 	MarkdownTable,
 	SpanLayout,
-	canSplit,
+	canUnmerge,
 	expandRange,
 	mergeBlocker,
 	normalizeRange,
 	resolveSpans,
 } from "./table";
 
-export type MergeAction = "merge" | "split" | "unsplit";
+export type MergeAction = "merge" | "unmerge" | "unsplit";
 
 const PREVIEW_LENGTH = 24;
 
@@ -24,7 +24,7 @@ export class MergeCellsModal extends Modal {
 	private cellEls: HTMLTableCellElement[] = [];
 	private statusEl!: HTMLElement;
 	private mergeButton!: ButtonComponent;
-	private splitButton!: ButtonComponent;
+	private unmergeButton!: ButtonComponent;
 
 	constructor(
 		app: App,
@@ -95,7 +95,7 @@ export class MergeCellsModal extends Modal {
 					.onClick(() => this.submit("merge"));
 			})
 			.addButton((b) => {
-				this.splitButton = b.setButtonText("拆分").onClick(() => this.submit("split"));
+				this.unmergeButton = b.setButtonText("取消合并").onClick(() => this.submit("unmerge"));
 			})
 			.addButton((b) => b.setButtonText("取消").onClick(() => this.close()));
 
@@ -121,7 +121,7 @@ export class MergeCellsModal extends Modal {
 		const size = `已选择 ${rg.r1 - rg.r0 + 1} 行 × ${rg.c1 - rg.c0 + 1} 列`;
 		this.statusEl.setText(blocker && !blocker.startsWith("请至少") ? `${size}：${blocker}` : size);
 		this.mergeButton.setDisabled(blocker !== null);
-		this.splitButton.setDisabled(!canSplit(this.layout, rg));
+		this.unmergeButton.setDisabled(!canUnmerge(this.layout, rg));
 	}
 
 	private submit(action: MergeAction): void {

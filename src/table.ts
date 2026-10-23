@@ -1,6 +1,7 @@
 /**
- * Pure Markdown-table logic: parsing, merge layout, merge / split edits and
- * formatting. Nothing in here depends on Obsidian, so it can be unit tested.
+ * Pure Markdown-table logic: parsing, merge layout, merge / unmerge / split
+ * edits and formatting. Nothing in here depends on Obsidian, so it can be
+ * unit tested.
  *
  * Merge syntax (compatible with plain Markdown):
  *   - a cell containing only `<` is merged into the cell on its left
@@ -258,7 +259,7 @@ export function mergeBlocker(range: CellRange): string | null {
 	return null;
 }
 
-export function canSplit(layout: SpanLayout, range: CellRange): boolean {
+export function canUnmerge(layout: SpanLayout, range: CellRange): boolean {
 	for (let r = range.r0; r <= range.r1; r++) {
 		for (let c = range.c0; c <= range.c1; c++) {
 			const reg = layout.regionAt[r][c];
@@ -306,8 +307,8 @@ export function mergeRange(t: MarkdownTable, range: CellRange, join: ContentJoin
 	return out;
 }
 
-/** Splits every merged region touched by `range` back into single cells. */
-export function splitRange(t: MarkdownTable, range: CellRange): MarkdownTable {
+/** Unmerges every merged region touched by `range` back into single cells. */
+export function unmergeRange(t: MarkdownTable, range: CellRange): MarkdownTable {
 	const layout = resolveSpans(t.rows);
 	const out = cloneTable(t);
 	for (let r = range.r0; r <= range.r1; r++) {

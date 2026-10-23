@@ -20,7 +20,7 @@ import {
 	CellRange,
 	ContentJoin,
 	MarkdownTable,
-	canSplit,
+	canUnmerge,
 	canUnsplit,
 	cellAt,
 	chOfCell,
@@ -33,7 +33,7 @@ import {
 	normalizeRange,
 	resolveSpans,
 	splitCell,
-	splitRange,
+	unmergeRange,
 	unsplitRange,
 } from "./table";
 
@@ -103,11 +103,11 @@ export default class TableFormatPlugin extends Plugin {
 
 		this.addCommand({
 			id: "split-cells",
-			name: "拆分单元格(取消合并)",
+			name: "取消合并单元格",
 			editorCheckCallback: (checking, editor, info) => {
 				const ctx = this.tableContext(editor, info);
 				if (!ctx?.selection) return false;
-				if (!checking) this.apply(ctx, "split", ctx.selection);
+				if (!checking) this.apply(ctx, "unmerge", ctx.selection);
 				return true;
 			},
 		});
@@ -262,13 +262,13 @@ export default class TableFormatPlugin extends Plugin {
 				.onClick(() => (blocker ? new Notice(blocker) : this.apply(ctx, "merge", rg))),
 		);
 		this.addUnsplitItem(menu, ctx, rg);
-		if (canSplit(layout, rg)) {
+		if (canUnmerge(layout, rg)) {
 			menu.addItem((item) =>
 				item
 					.setSection("table")
 					.setIcon(SPLIT_ICON)
-					.setTitle(zh ? "拆分单元格" : "Split cells")
-					.onClick(() => this.apply(ctx, "split", rg)),
+					.setTitle(zh ? "取消合并单元格" : "Unmerge cells")
+					.onClick(() => this.apply(ctx, "unmerge", rg)),
 			);
 		}
 		const reg = layout.regionAt[rg.r0][rg.c0];
@@ -362,7 +362,7 @@ export default class TableFormatPlugin extends Plugin {
 					? mergeRange(ctx.table, range, join)
 					: action === "unsplit"
 						? unsplitRange(ctx.table, range, join)
-						: splitRange(ctx.table, range);
+						: unmergeRange(ctx.table, range);
 			this.write(ctx, next, range, this.settings.alignOnEdit);
 		} catch (e) {
 			new Notice(e instanceof Error ? e.message : String(e));
@@ -419,7 +419,7 @@ class TableFormatSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("合并后对齐列宽")
-			.setDesc("合并或拆分后自动补齐空格，让源码里的表格列对齐(中文按两个字符宽度计算)。")
+			.setDesc("合并、取消合并或分裂后自动补齐空格，让源码里的表格列对齐(中文按两个字符宽度计算)。")
 			.addToggle((t) =>
 				t.setValue(this.plugin.settings.alignOnEdit).onChange(async (v) => {
 					this.plugin.settings.alignOnEdit = v;

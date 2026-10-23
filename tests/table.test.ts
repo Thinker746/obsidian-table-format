@@ -11,7 +11,7 @@ import {
 	mergeRange,
 	resolveSpans,
 	splitCell,
-	splitRange,
+	unmergeRange,
 	splitRow,
 	unsplitRange,
 } from "../src/table";
@@ -124,10 +124,10 @@ test("expandRange grows to include touched merges, merging over merges works", (
 	]);
 });
 
-test("splitRange clears markers of touched regions", () => {
+test("unmergeRange clears markers of touched regions", () => {
 	let t = parse(SAMPLE);
 	t = mergeRange(t, { r0: 1, c0: 0, r1: 2, c1: 1 }, "space");
-	const out = splitRange(t, { r0: 2, c0: 1, r1: 2, c1: 1 });
+	const out = unmergeRange(t, { r0: 2, c0: 1, r1: 2, c1: 1 });
 	assert.deepEqual(out.rows.slice(1, 3), [
 		["1 2 4 5", "", "3"],
 		["", "", "6"],
